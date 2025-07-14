@@ -6,14 +6,14 @@
 #pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
 
 
-#define FASTLZ_LIKELY(c) (__builtin_expect(!!(c), 1))
-#define FASTLZ_UNLIKELY(c) (__builtin_expect(!!(c), 0))
+#define RapidArchive_LIKELY(c) (__builtin_expect(!!(c), 1))
+#define RapidArchive_UNLIKELY(c) (__builtin_expect(!!(c), 0))
 
 #define FLZ_ARCH64
 
 #include <string.h>
 
-// fastlz_memmove: 安全地将count字节从src移动到dest，支持重叠区域。
+// RapidArchive_memmove: 安全地将count字节从src移动到dest，支持重叠区域。
 // 1.判断是否可以直接用标准库的 memmove：
 // 如果 count > 4 并且 dest 在 src + count 之后（即目标和源没有重叠，或者目标在源后面），直接调用 memmove，效率高。
 // 2.否则，自己实现拷贝：
@@ -21,7 +21,7 @@
 // 对于 count > 3 的情况，使用 do-while 循环逐字节拷贝。
 // 3.switch-case 的技巧：
 // 没有 break，利用 case 穿透（fallthrough），比如 count=3 时，会连续执行 3、2、1 的拷贝。
-static void fastlz_memmove(uint8_t* dest, const uint8_t* src, uint32_t count) {
+static void RapidArchive_memmove(uint8_t* dest, const uint8_t* src, uint32_t count) {
   if ((count > 4) && (dest >= src + count)) {
     memmove(dest, src, count);
   } else {
@@ -43,21 +43,21 @@ static void fastlz_memmove(uint8_t* dest, const uint8_t* src, uint32_t count) {
   }
 }
 
-// fastlz_memcpy: 简单地将count字节从src复制到dest，不处理重叠。
-static void fastlz_memcpy(uint8_t* dest, const uint8_t* src, uint32_t count) { memcpy(dest, src, count); }
+// RapidArchive_memcpy: 简单地将count字节从src复制到dest，不处理重叠。
+static void RapidArchive_memcpy(uint8_t* dest, const uint8_t* src, uint32_t count) { memcpy(dest, src, count); }
 
-// flz_readu32: 从ptr读取一个32位无符号整数（小端）。
+// ra_readu32: 从ptr读取一个32位无符号整数（小端）。
 // 用32位是为了兼容性、效率和算法本身的需求。即使在64位平台，32位操作依然高效且足够。
-static uint32_t flz_readu32(const void* ptr) { return *(const uint32_t*)ptr; }
+static uint32_t ra_readu32(const void* ptr) { return *(const uint32_t*)ptr; }
 
-// flz_cmp: 比较p和q指向的数据，直到r，返回相同字节数。
+// ra_cmp: 比较p和q指向的数据，直到r，返回相同字节数。
 // p：指向当前待比较的输入数据的当前位置（通常是当前压缩窗口的末尾）。
 // q：指向历史数据中可能匹配的位置（通常是哈希表查到的历史片段）。
 // r：指向输入数据的比较结束位置（通常是输入数据的末尾或窗口的末尾）。
-static uint32_t flz_cmp(const uint8_t* p, const uint8_t* q, const uint8_t* r) {
+static uint32_t ra_cmp(const uint8_t* p, const uint8_t* q, const uint8_t* r) {
   const uint8_t* start = p;
 
-  if (flz_readu32(p) == flz_readu32(q)) {
+  if (ra_readu32(p) == ra_readu32(q)) {
     p += 4;
     q += 4;
   }
@@ -85,21 +85,21 @@ static uint32_t flz_cmp(const uint8_t* p, const uint8_t* q, const uint8_t* r) {
 #define HASH_SIZE (1 << HASH_LOG)
 #define HASH_MASK (HASH_SIZE - 1)
 
-// flz_hash: 计算32位值的哈希，用于查找匹配。
-static uint16_t flz_hash(uint32_t v) {
+// ra_hash: 计算32位值的哈希，用于查找匹配。
+static uint16_t ra_hash(uint32_t v) {
 // 2654435769 是著名的 Knuth 哈希常数（0x9E3779B9），用于将输入值打散，减少哈希冲突。
 // 右移19位，就是取原始32位整数的高13位，作为哈希表下标。
   uint32_t h = (v * 2654435769LL) >> (32 - HASH_LOG);
   return h & HASH_MASK;
 }
 
-// flz_smallcopy: 拷贝最多MAX_COPY字节，优化小块拷贝。
+// ra_smallcopy: 拷贝最多MAX_COPY字节，优化小块拷贝。
 // 1.优化大于等于4字节的拷贝：
 // 如果 count >= 4，就把源和目标都按4字节（uint32_t）为单位进行拷贝，这样比逐字节拷贝更快。
 // 每次拷贝4字节，循环直到剩下不超过4字节。
 // 2.处理剩余的1~3字节：
-// 拷贝完4字节对齐的部分后，剩下的1~3字节用 fastlz_memcpy 逐字节拷贝，保证所有数据都被复制。
-static void flz_smallcopy(uint8_t* dest, const uint8_t* src, uint32_t count) {
+// 拷贝完4字节对齐的部分后，剩下的1~3字节用 RapidArchive_memcpy 逐字节拷贝，保证所有数据都被复制。
+static void ra_smallcopy(uint8_t* dest, const uint8_t* src, uint32_t count) {
   if (count >= 4) {
     const uint32_t* p = (const uint32_t*)src;
     uint32_t* q = (uint32_t*)dest;
@@ -110,13 +110,13 @@ static void flz_smallcopy(uint8_t* dest, const uint8_t* src, uint32_t count) {
       src += 4;
     }
   }
-  fastlz_memcpy(dest, src, count);
+  RapidArchive_memcpy(dest, src, count);
 }
 
-// flz_maxcopy: 拷贝正好MAX_COPY字节，优化为8次32位拷贝。
+// ra_maxcopy: 拷贝正好MAX_COPY字节，优化为8次32位拷贝。
 // 这个函数假定要拷贝的数据长度正好是 32 字节（8 × 4 字节）。
 // 通过 8 次 4 字节（uint32_t）赋值，快速完成拷贝，比逐字节拷贝更高效。
-static void flz_maxcopy(void* dest, const void* src) {
+static void ra_maxcopy(void* dest, const void* src) {
   const uint32_t* p = (const uint32_t*)src;
   uint32_t* q = (uint32_t*)dest;
   *q++ = *p++;
@@ -129,37 +129,37 @@ static void flz_maxcopy(void* dest, const void* src) {
   *q++ = *p++;
 }
 
-// flz_literals: 将runs个字节的原始数据从src复制到dest，处理分段。
+// ra_literals: 将runs个字节的原始数据从src复制到dest，处理分段。
 // 1.分段处理大于等于 MAX_COPY 的数据块：
 // 每次最多处理 MAX_COPY（32）字节。
 // 先写一个控制字节 MAX_COPY-1（表示后面跟着 32 字节原始数据）。
-// 用 flz_maxcopy 拷贝 32 字节。
+// 用 ra_maxcopy 拷贝 32 字节。
 // 更新指针和剩余字节数，循环直到剩下不足 32 字节。
 // 2.处理剩余不足 MAX_COPY 的数据：
 // 如果还有剩余（1~31字节），写一个控制字节 runs-1（表示后面跟着 runs 字节原始数据）。
-// 用 flz_smallcopy 拷贝剩余字节。
+// 用 ra_smallcopy 拷贝剩余字节。
 // 3.返回新的 dest 指针：
 // 返回写入数据后的 dest 位置，方便后续继续写数据。
-static uint8_t* flz_literals(uint32_t runs, const uint8_t* src, uint8_t* dest) {
+static uint8_t* ra_literals(uint32_t runs, const uint8_t* src, uint8_t* dest) {
   while (runs >= MAX_COPY) {
     *dest++ = MAX_COPY - 1;// 控制字节 31 (00011111)
-    flz_maxcopy(dest, src);
+    ra_maxcopy(dest, src);
     src += MAX_COPY;
     dest += MAX_COPY;
     runs -= MAX_COPY;
   }
   if (runs > 0) {
     *dest++ = runs - 1;// 控制字节 0~30 (000xxxxx)
-    flz_smallcopy(dest, src, runs);
+    ra_smallcopy(dest, src, runs);
     dest += runs;
   }
   return dest;
 }
 
-// flz1_match: 写入fastlz1压缩格式的匹配信息到op，返回新op。
+// ra1_match: 写入RapidArchive1压缩格式的匹配信息到op，返回新op。
 // 1.distance 预处理：
 // --distance;
-// fastlz1 的距离是以 1 为基准的，所以编码时要减 1。
+// RapidArchive1 的距离是以 1 为基准的，所以编码时要减 1。
 // 2.处理超长匹配：
 // 如果 len > MAX_LEN - 2（即长度太长，单个 match 段放不下），就拆成多个最大长度的段，每段长度为 MAX_LEN - 2。
 // 每段编码为 3 字节：
@@ -190,9 +190,9 @@ static uint8_t* flz_literals(uint32_t runs, const uint8_t* src, uint8_t* dest) {
 // -------------------------------------------------------------------
 // 比如263进入循环的话，op只能记录7+253=260，len-262=1，还剩1字节，跳出while循环，再用2字节编码完
 // 比如262不进入循环的话，op直接记录7+255=262，三个字节直接可以编码完
-static uint8_t* flz1_match(uint32_t len, uint32_t distance, uint8_t* op) {
+static uint8_t* ra1_match(uint32_t len, uint32_t distance, uint8_t* op) {
   --distance;
-  if (FASTLZ_UNLIKELY(len > MAX_LEN - 2))
+  if (RapidArchive_UNLIKELY(len > MAX_LEN - 2))
     // 每轮减262，却只写253（表示253+7=260字节）
     // 这是实现上的一种特殊处理，让算法结构简化，剩下的字节正是交给后面的if/else语句用两字节编码来覆盖
     while (len > MAX_LEN - 2) {
@@ -211,15 +211,15 @@ static uint8_t* flz1_match(uint32_t len, uint32_t distance, uint8_t* op) {
   }
   return op;
 }
-// len：匹配到的额外字节数；uint32_t len = flz_cmp(ref + 3, ip + 3, ip_bound); 返回的是从第4字节开始继续匹配的字节数。
+// len：匹配到的额外字节数；uint32_t len = ra_cmp(ref + 3, ip + 3, ip_bound); 返回的是从第4字节开始继续匹配的字节数。
 // distance：匹配距离（当前数据与历史数据的距离）。
 // op：输出缓冲区指针。
 
-#define FASTLZ_BOUND_CHECK(cond) \
-  if (FASTLZ_UNLIKELY(!(cond))) return 0;
+#define RapidArchive_BOUND_CHECK(cond) \
+  if (RapidArchive_UNLIKELY(!(cond))) return 0;
 
-// fastlz1_compress: fastlz1压缩主函数，将input压缩到output。
-static int fastlz1_compress(const void* input, int length, void* output) {
+// RapidArchive1_compress: RapidArchive1压缩主函数，将input压缩到output。
+static int RapidArchive1_compress(const void* input, int length, void* output) {
   const uint8_t* ip = (const uint8_t*)input;
   const uint8_t* ip_start = ip;
   const uint8_t* ip_bound = ip + length - 4; /* because readU32 */
@@ -235,29 +235,29 @@ static int fastlz1_compress(const void* input, int length, void* output) {
   const uint8_t* anchor = ip;
   ip += 2;
 
-  while (FASTLZ_LIKELY(ip < ip_limit)) {
+  while (RapidArchive_LIKELY(ip < ip_limit)) {
     const uint8_t* ref;
     uint32_t distance, cmp;
 
     do {
-      seq = flz_readu32(ip) & 0xffffff;
-      hash = flz_hash(seq);
+      seq = ra_readu32(ip) & 0xffffff;
+      hash = ra_hash(seq);
       ref = ip_start + htab[hash];
       htab[hash] = ip - ip_start;
       distance = ip - ref;
-      cmp = FASTLZ_LIKELY(distance < MAX_L1_DISTANCE) ? flz_readu32(ref) & 0xffffff : 0x1000000;
-      if (FASTLZ_UNLIKELY(ip >= ip_limit)) break;
+      cmp = RapidArchive_LIKELY(distance < MAX_L1_DISTANCE) ? ra_readu32(ref) & 0xffffff : 0x1000000;
+      if (RapidArchive_UNLIKELY(ip >= ip_limit)) break;
       ++ip;
     } while (seq != cmp);
 
-    if (FASTLZ_UNLIKELY(ip >= ip_limit)) break;
+    if (RapidArchive_UNLIKELY(ip >= ip_limit)) break;
     // do-while找到匹配时，记录htab，最后++ip;
     // 跳出循环匹时，此时的 ip 已经指向“第一个配字节的下一个位置”，需要回退一步（--ip）。
     --ip;
 
     // 2.主循环第一次遇到匹配时，会把 anchor 到 ip 之间的数据（即前2字节）作为 literal 块输出！！！对应上面注释
-    if (FASTLZ_LIKELY(ip > anchor)) {
-      op = flz_literals(ip - anchor, anchor, op);
+    if (RapidArchive_LIKELY(ip > anchor)) {
+      op = ra_literals(ip - anchor, anchor, op);
     }
     
     //    ref      ip
@@ -265,10 +265,10 @@ static int fastlz1_compress(const void* input, int length, void* output) {
     //     0  1  2  3  4  5  6  7  8  9 ...
     // 第一次do-while退出时，ref=0 ip=3，len=3
     // 然后继续从 012的abc 和 345的abc 的后面比较，直到不匹配或到达边界
-    // len = flz_cmp(ref + 3, ip + 3, ip_bound) 即 3 = flz_cmp(3, 6, ip_bound)
-    uint32_t len = flz_cmp(ref + 3, ip + 3, ip_bound);
+    // len = ra_cmp(ref + 3, ip + 3, ip_bound) 即 3 = ra_cmp(3, 6, ip_bound)
+    uint32_t len = ra_cmp(ref + 3, ip + 3, ip_bound);
     // 把len和distance以压缩格式写进op
-    op = flz1_match(len, distance, op);
+    op = ra1_match(len, distance, op);
 
     /* update the hash at match boundary */
     // 最后补2次hash，每次都是补match末尾的2个滑窗[三字节]
@@ -279,11 +279,11 @@ static int fastlz1_compress(const void* input, int length, void* output) {
     // eg4：a b c A B C D E F g a b c A B C D x y z，最后补[14,15,16]: B C D 和 [15,16,17]: C D x
     // eg5：a  b  c  A  B  C  D  E  F  G  H  I  J  K   a  b  c  A  B  C  D  E  F  G  x  y  z，最后补[21,22,23] = E F G 和 [22,23,24] = F G x
     ip += len; // ip = ip + len = 3 + 3 = 6
-    seq = flz_readu32(ip); // seq = 6789的abcd
-    hash = flz_hash(seq & 0xffffff); // seq & 0xffffff = 678的abc(小端)
+    seq = ra_readu32(ip); // seq = 6789的abcd
+    hash = ra_hash(seq & 0xffffff); // seq & 0xffffff = 678的abc(小端)
     htab[hash] = ip++ - ip_start; // htab[hash(a b c)] = 6，ip=7
     seq >>= 8; // seq = 789的bcd
-    hash = flz_hash(seq);
+    hash = ra_hash(seq);
     htab[hash] = ip++ - ip_start; // htab[hash(b c d)] = 7，ip=8
 
     anchor = ip; // 8
@@ -294,13 +294,13 @@ static int fastlz1_compress(const void* input, int length, void* output) {
   // anchor：这是最后一次匹配后，未被压缩的原始数据块的起始地址（指针）。
   // 两个指针相减，结果是字节数，即“从anchor到input末尾有多少字节”。
   uint32_t copy = (uint8_t*)input + length - anchor;
-  op = flz_literals(copy, anchor, op);
+  op = ra_literals(copy, anchor, op);
   // 返回压缩后数据的长度
   return op - (uint8_t*)output;
 }
 // const uint8_t* ip：输入数据当前处理位置的指针（input pointer）。
 // const uint8_t* ip_start：输入数据的起始地址，用于计算偏移量。
-// const uint8_t* ip_bound：输入数据的边界指针，等于 ip + length - 4，用于保证后续 flz_readu32 不越界。
+// const uint8_t* ip_bound：输入数据的边界指针，等于 ip + length - 4，用于保证后续 ra_readu32 不越界。
 // const uint8_t* ip_limit：输入数据的主循环终止指针，等于 ip + length - 12 - 1，保证压缩主循环不会越界。
 // uint8_t* op：输出数据当前写入位置的指针（output pointer）。
 // uint32_t htab[HASH_SIZE]：哈希表，保存每个哈希值最近一次出现的位置（偏移量），用于快速查找历史数据。
@@ -313,7 +313,7 @@ static int fastlz1_compress(const void* input, int length, void* output) {
 // uint32_t len：匹配到的最长重复字节数。
 // uint32_t copy：循环结束后，剩余未匹配数据的字节数。
 
-// fastlz1_decompress: fastlz1解压主函数，将input解压到output。
+// RapidArchive1_decompress: RapidArchive1解压主函数，将input解压到output。
 // ---后期删除-----重复注释--------------------重复注释----------------重复注释---------后期删除--------------
 // MAX_L1_DISTANCE=8192=2^13，distance >> 8取高5位，distance & 255取低8位。
 // 0 <= len <= 6，用2字节编码：        [len(3bit) | distance高5bit]    ||    [distance低8bit]
@@ -328,7 +328,7 @@ static int fastlz1_compress(const void* input, int length, void* output) {
 // ---后期删除------重复注释---------------重复注释--------------------重复注释-------后期删除----------------
 // literal 块：控制字节高3位全0（000xxxxx），长度 = xxxxx + 1
 // match 块：控制字节高3位非0（yyyxxxxx），长度和距离编码在 yyy 和 xxxxx 及后续字节
-static int fastlz1_decompress(const void* input, int length, void* output, int maxout) {
+static int RapidArchive1_decompress(const void* input, int length, void* output, int maxout) {
   const uint8_t* ip = (const uint8_t*)input;
   const uint8_t* ip_limit = ip + length;
   const uint8_t* ip_bound = ip_limit - 2;
@@ -336,7 +336,7 @@ static int fastlz1_decompress(const void* input, int length, void* output, int m
   uint8_t* op_limit = op + maxout;
   // 取 input 的第一个字节的低 5 位作为控制字节
   uint32_t ctrl = (*ip++) & 31;
-  // 主循环第一次遇到匹配时，会把 anchor 到 ip 之间的数据（即前2字节）作为 literal 块输出（fastlz1_compress注释）
+  // 主循环第一次遇到匹配时，会把 anchor 到 ip 之间的数据（即前2字节）作为 literal 块输出（RapidArchive1_compress注释）
   // 只有第一次循环时，ctrl = (*ip++) & 31;，此时 ctrl 只取了低5位（0~31）。
   // 后续每次循环，ctrl = *ip++;，直接取一个字节（0~255），没有再与31做与运算，所以 ctrl 可能大于等于32。
   while (1) {
@@ -344,32 +344,32 @@ static int fastlz1_decompress(const void* input, int length, void* output, int m
     if (ctrl >= 32) {// #define MAX_COPY 32
       uint32_t len = (ctrl >> 5) - 1;//  -1 是为了让高3位值1、2、3...正好对应最短3、4、5...字节的match（x-1+3即x+2，下面有len += 3;）
       if (len == 7 - 1) {//如果长度等于6（7-1），说明是3字节编码的情况，继续读一个字节加到 len 上
-        FASTLZ_BOUND_CHECK(ip <= ip_bound);
+        RapidArchive_BOUND_CHECK(ip <= ip_bound);
         len += *ip++;
       }
       len += 3;// 匹配长度加3
 
       uint32_t ofs = (ctrl & 31) << 8;// 低5位，左移8，得高位部分（ofs = DDDDD00000000）
       // offset=0 的含义就是“回到输出缓冲区的前一个已经解压好的字节”
-      // flz1_match中有注释：fastlz1 的距离是以 1 为基准的，所以编码时要减 1
-      const uint8_t* ref = op - ofs - 1; // 1.计算历史数据的起始位置第一步：先减去高5位的偏移量（ofs），再减1是因为fastlz1的匹配是从ref的第一个字节开始的，而op指向的是下一个要写入的位置！！！对应下面注释
+      // ra1_match中有注释：RapidArchive1 的距离是以 1 为基准的，所以编码时要减 1
+      const uint8_t* ref = op - ofs - 1; // 1.计算历史数据的起始位置第一步：先减去高5位的偏移量（ofs），再减1是因为RapidArchive1的匹配是从ref的第一个字节开始的，而op指向的是下一个要写入的位置！！！对应下面注释
       ref -= *ip++;// 2.计算历史数据的起始位置第二步：再减去低8位！！！对应上面注释
       
-      FASTLZ_BOUND_CHECK(op + len <= op_limit);
-      FASTLZ_BOUND_CHECK(ref >= (uint8_t*)output);
-      fastlz_memmove(op, ref, len);// 从 ref 拷贝 len 字节到 op
+      RapidArchive_BOUND_CHECK(op + len <= op_limit);
+      RapidArchive_BOUND_CHECK(ref >= (uint8_t*)output);
+      RapidArchive_memmove(op, ref, len);// 从 ref 拷贝 len 字节到 op
       op += len;// op 前进 len
     // ctrl < 32   =====>   高3位为0   =====>   是 literal 段   =====>   len(也就是ctrl的高3位)=0
     } else {
-      ctrl++;// 表示 literal 长度（1~32字节），flz_literals存储控制字节会-1，即1~32长度->0~31的5bit，需要+1恢复
-      FASTLZ_BOUND_CHECK(op + ctrl <= op_limit);
-      FASTLZ_BOUND_CHECK(ip + ctrl <= ip_limit);
-      fastlz_memcpy(op, ip, ctrl);// 从 input 拷贝 ctrl 字节到 output
+      ctrl++;// 表示 literal 长度（1~32字节），ra_literals存储控制字节会-1，即1~32长度->0~31的5bit，需要+1恢复
+      RapidArchive_BOUND_CHECK(op + ctrl <= op_limit);
+      RapidArchive_BOUND_CHECK(ip + ctrl <= ip_limit);
+      RapidArchive_memcpy(op, ip, ctrl);// 从 input 拷贝 ctrl 字节到 output
       ip += ctrl;// ip 前进 ctrl
       op += ctrl;// op 前进 ctrl
     }
 
-    if (FASTLZ_UNLIKELY(ip > ip_bound)) break;
+    if (RapidArchive_UNLIKELY(ip > ip_bound)) break;
     // 读取下一个控制字节
     ctrl = *ip++;
   }
@@ -383,8 +383,8 @@ static int fastlz1_decompress(const void* input, int length, void* output, int m
 // op_limit：输出数据末尾指针
 // ctrl：控制字节，决定接下来是 literal 还是 match
 
-// flz2_match: 写入fastlz2压缩格式的匹配信息到op，返回新op。
-static uint8_t* flz2_match(uint32_t len, uint32_t distance, uint8_t* op) {
+// ra2_match: 写入RapidArchive2压缩格式的匹配信息到op，返回新op。
+static uint8_t* ra2_match(uint32_t len, uint32_t distance, uint8_t* op) {
   --distance;
   if (distance < MAX_L2_DISTANCE) {
     if (len < 7) {
@@ -417,8 +417,8 @@ static uint8_t* flz2_match(uint32_t len, uint32_t distance, uint8_t* op) {
   return op;
 }
 
-// fastlz2_compress: fastlz2压缩主函数，将input压缩到output。
-static int fastlz2_compress(const void* input, int length, void* output) {
+// RapidArchive2_compress: RapidArchive2压缩主函数，将input压缩到output。
+static int RapidArchive2_compress(const void* input, int length, void* output) {
   const uint8_t* ip = (const uint8_t*)input;
   const uint8_t* ip_start = ip;
   const uint8_t* ip_bound = ip + length - 4; /* because readU32 */
@@ -436,23 +436,23 @@ static int fastlz2_compress(const void* input, int length, void* output) {
   ip += 2;
 
   /* main loop */
-  while (FASTLZ_LIKELY(ip < ip_limit)) {
+  while (RapidArchive_LIKELY(ip < ip_limit)) {
     const uint8_t* ref;
     uint32_t distance, cmp;
 
     /* find potential match */
     do {
-      seq = flz_readu32(ip) & 0xffffff;
-      hash = flz_hash(seq);
+      seq = ra_readu32(ip) & 0xffffff;
+      hash = ra_hash(seq);
       ref = ip_start + htab[hash];
       htab[hash] = ip - ip_start;
       distance = ip - ref;
-      cmp = FASTLZ_LIKELY(distance < MAX_FARDISTANCE) ? flz_readu32(ref) & 0xffffff : 0x1000000;
-      if (FASTLZ_UNLIKELY(ip >= ip_limit)) break;
+      cmp = RapidArchive_LIKELY(distance < MAX_FARDISTANCE) ? ra_readu32(ref) & 0xffffff : 0x1000000;
+      if (RapidArchive_UNLIKELY(ip >= ip_limit)) break;
       ++ip;
     } while (seq != cmp);
 
-    if (FASTLZ_UNLIKELY(ip >= ip_limit)) break;
+    if (RapidArchive_UNLIKELY(ip >= ip_limit)) break;
 
     --ip;
 
@@ -464,36 +464,36 @@ static int fastlz2_compress(const void* input, int length, void* output) {
       }
     }
 
-    if (FASTLZ_LIKELY(ip > anchor)) {
-      op = flz_literals(ip - anchor, anchor, op);
+    if (RapidArchive_LIKELY(ip > anchor)) {
+      op = ra_literals(ip - anchor, anchor, op);
     }
 
-    uint32_t len = flz_cmp(ref + 3, ip + 3, ip_bound);
-    op = flz2_match(len, distance, op);
+    uint32_t len = ra_cmp(ref + 3, ip + 3, ip_bound);
+    op = ra2_match(len, distance, op);
 
     /* update the hash at match boundary */
     ip += len;
-    seq = flz_readu32(ip);
-    hash = flz_hash(seq & 0xffffff);
+    seq = ra_readu32(ip);
+    hash = ra_hash(seq & 0xffffff);
     htab[hash] = ip++ - ip_start;
     seq >>= 8;
-    hash = flz_hash(seq);
+    hash = ra_hash(seq);
     htab[hash] = ip++ - ip_start;
 
     anchor = ip;
   }
 
   uint32_t copy = (uint8_t*)input + length - anchor;
-  op = flz_literals(copy, anchor, op);
+  op = ra_literals(copy, anchor, op);
 
-  // fastlz2 压缩时，首字节高3位写为 001
+  // RapidArchive2 压缩时，首字节高3位写为 001
   *(uint8_t*)output |= (1 << 5);
 
   return op - (uint8_t*)output;
 }
 
-// fastlz2_decompress: fastlz2解压主函数，将input解压到output。
-static int fastlz2_decompress(const void* input, int length, void* output, int maxout) {
+// RapidArchive2_decompress: RapidArchive2解压主函数，将input解压到output。
+static int RapidArchive2_decompress(const void* input, int length, void* output, int maxout) {
   const uint8_t* ip = (const uint8_t*)input;
   const uint8_t* ip_limit = ip + length;
   const uint8_t* ip_bound = ip_limit - 2;
@@ -509,7 +509,7 @@ static int fastlz2_decompress(const void* input, int length, void* output, int m
 
       uint8_t code;
       if (len == 7 - 1) do {
-          FASTLZ_BOUND_CHECK(ip <= ip_bound);
+          RapidArchive_BOUND_CHECK(ip <= ip_bound);
           code = *ip++;
           len += code;
         } while (code == 255);
@@ -518,50 +518,50 @@ static int fastlz2_decompress(const void* input, int length, void* output, int m
       len += 3;
 
       /* match from 16-bit distance */
-      if (FASTLZ_UNLIKELY(code == 255))
-        if (FASTLZ_LIKELY(ofs == (31 << 8))) {
-          FASTLZ_BOUND_CHECK(ip < ip_bound);
+      if (RapidArchive_UNLIKELY(code == 255))
+        if (RapidArchive_LIKELY(ofs == (31 << 8))) {
+          RapidArchive_BOUND_CHECK(ip < ip_bound);
           ofs = (*ip++) << 8;
           ofs += *ip++;
           ref = op - ofs - MAX_L2_DISTANCE - 1;
         }
 
-      FASTLZ_BOUND_CHECK(op + len <= op_limit);
-      FASTLZ_BOUND_CHECK(ref >= (uint8_t*)output);
-      fastlz_memmove(op, ref, len);
+      RapidArchive_BOUND_CHECK(op + len <= op_limit);
+      RapidArchive_BOUND_CHECK(ref >= (uint8_t*)output);
+      RapidArchive_memmove(op, ref, len);
       op += len;
     } else {
       ctrl++;
-      FASTLZ_BOUND_CHECK(op + ctrl <= op_limit);
-      FASTLZ_BOUND_CHECK(ip + ctrl <= ip_limit);
-      fastlz_memcpy(op, ip, ctrl);
+      RapidArchive_BOUND_CHECK(op + ctrl <= op_limit);
+      RapidArchive_BOUND_CHECK(ip + ctrl <= ip_limit);
+      RapidArchive_memcpy(op, ip, ctrl);
       ip += ctrl;
       op += ctrl;
     }
 
-    if (FASTLZ_UNLIKELY(ip >= ip_limit)) break;
+    if (RapidArchive_UNLIKELY(ip >= ip_limit)) break;
     ctrl = *ip++;
   }
 
   return op - (uint8_t*)output;
 }
 
-// fastlz_decompress: 自动检测压缩级别并解压，支持level 1和2。
-int fastlz_decompress(const void* input, int length, void* output, int maxout) {
+// RapidArchive_decompress: 自动检测压缩级别并解压，支持level 1和2。
+int RapidArchive_decompress(const void* input, int length, void* output, int maxout) {
   /* magic identifier for compression level */
   int level = ((*(const uint8_t*)input) >> 5) + 1;
 
-  if (level == 1) return fastlz1_decompress(input, length, output, maxout);
-  if (level == 2) return fastlz2_decompress(input, length, output, maxout);
+  if (level == 1) return RapidArchive1_decompress(input, length, output, maxout);
+  if (level == 2) return RapidArchive2_decompress(input, length, output, maxout);
 
   /* unknown level, trigger error */
   return 0;
 }
 
-// fastlz_compress_level: 根据level选择压缩算法，1为fastlz1，2为fastlz2。
-int fastlz_compress_level(int level, const void* input, int length, void* output) {
-  if (level == 1) return fastlz1_compress(input, length, output);
-  if (level == 2) return fastlz2_compress(input, length, output);
+// RapidArchive_compress_level: 根据level选择压缩算法，1为RapidArchive1，2为RapidArchive2。
+int RapidArchive_compress_level(int level, const void* input, int length, void* output) {
+  if (level == 1) return RapidArchive1_compress(input, length, output);
+  if (level == 2) return RapidArchive2_compress(input, length, output);
 
   return 0;
 }
